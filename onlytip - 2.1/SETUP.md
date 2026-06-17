@@ -167,3 +167,57 @@ onlytip - 2.1/
     GraphicsSettings.asset
   SETUP.md
 ```
+
+
+## Troubleshooting: White / Missing Textures
+
+If the hand model appears pure white instead of the blue hologram effect, the
+material reference chain is probably fine (all GUIDs are correct in git), but
+the shader or prefab connection might be broken after a fresh clone.
+
+### Fix: Re-assign the Hologram Material
+
+1. In the Project window, navigate to `Assets/Scenes/textures/`
+2. Find `Hologram_Blue.mat`
+3. In the Hierarchy window, expand the hand model object
+4. For each child with a `Skinned Mesh Renderer` component:
+   - Drag `Hologram_Blue.mat` into the `Materials` > `Element 0` slot
+5. Save the scene (Ctrl+S)
+
+### Fix: Verify Shader Compilation
+
+Open the Unity Console window (`Window > General > Console`).
+If you see shader compilation errors for `Custom/BlueHologram_Final_Fixed`:
+
+1. Select `Assets/Scenes/textures/HologramShader.shader` in the Project window
+2. In the Inspector, click `Compile and show code`
+3. If errors appear, try these steps:
+   - Ensure `Edit > Project Settings > Graphics` uses Built-in Render Pipeline
+   - Check that `Player Settings > Other Settings > Color Space` is set to `Linear`
+   - Reimport the shader: right-click `HologramShader.shader` > `Reimport`
+
+### Fix: Material Location for FBX
+
+The FBX uses `EmbeddedMaterials` mode, which can cause GUID conflicts on
+other machines. To fix this in Unity:
+
+1. Select `Assets/Scenes/source/hand-only-rig.fbx` in the Project window
+2. In the Inspector, go to the `Materials` tab
+3. Change `Material Location` to `Use External Materials (Legacy)`
+4. Click `Extract Materials...` and save to `Assets/Scenes/source/Materials/`
+5. Click `Apply`
+6. Commit the new `.mat` files to git
+
+### Verify the Full Material Chain
+
+The expected chain is:
+
+```
+SampleScene.unity (PrefabModification)
+  -> Hologram_Blue.mat (guid: 58aafc50...)
+    -> HologramShader.shader (guid: 16cf8cbc...)
+      -> Custom/BlueHologram_Final_Fixed
+```
+
+All three files must exist in the cloned repo. Open each in a text editor and
+verify the GUID references match.
