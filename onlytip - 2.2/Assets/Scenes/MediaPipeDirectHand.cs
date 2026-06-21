@@ -49,7 +49,20 @@ public class MediaPipeDirectHand : MonoBehaviour
     [Tooltip("Thumb natural spread offset (degrees)")]
     public float thumbNaturalSpread = 30f;
 
-    [Header("Smoothing")]
+    [Header(""Smoothing"")]
+    [Range(0f, 1f)] public float smoothAlpha = 0.3f;
+
+    [Header(""Bone Test Mode (no UDP needed)"")]
+    [Tooltip(""Check this to test bones without UDP. Adjust testCurl below."")]
+    public bool testMode = false;
+    [Range(0f, 1f)] public float testCurl = 0.3f;
+    [Range(-1f, 1f)] public float testSpread = 0.0f;
+
+    // Diagnostics
+    private int _packetsReceived = 0;
+    private int _packetsPerSecond = 0;
+    private float _fpsCounter = 0;
+    private float _lastFpsTime = 0;
     [Range(0f, 1f)] public float smoothAlpha = 0.3f;
 
     private UdpClient _udp;
@@ -92,6 +105,7 @@ public class MediaPipeDirectHand : MonoBehaviour
             go.transform.SetParent(transform, false);
             AutoDiscover(go.transform);
         }
+        if (testMode) Debug.Log(""[v2.2] TEST MODE ON - use testCurl/spread sliders to pose hand"");
         InitArrays();
         StartUdp();
     }
@@ -107,6 +121,16 @@ public class MediaPipeDirectHand : MonoBehaviour
     }
 
     void Update()
+    {
+        // FPS counter
+        _fpsCounter++;
+        if (Time.time - _lastFpsTime >= 1f)
+        {
+            _packetsPerSecond = (int)(_fpsCounter / (Time.time - _lastFpsTime));
+            _fpsCounter = 0;
+            _lastFpsTime = Time.time;
+        }
+
     {
         _lastPacketTime += Time.deltaTime;
         while (_queue.TryDequeue(out var pkt)) { _latest = pkt; _lastPacketTime = 0f; }
@@ -172,25 +196,37 @@ public class MediaPipeDirectHand : MonoBehaviour
     [ContextMenu(""Diagnose Bone Hierarchy"")]
     void DiagnoseBones()
     {
-        if (handPrefab == null) { Debug.LogError("Set handPrefab first"); return; }
+        if (handPrefab == null) { Debug.LogError(""Set handPrefab first""); return; }
         var scan = Instantiate(handPrefab);
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("=== Bone Hierarchy ===");
-        LogTree(scan.transform, sb, 0);
-        UnityEngine.Debug.Log(sb.ToString());
+        sb.AppendLine(""=== Bone Hierarchy (numbered) ==="");
+        sb.AppendLine(""Index | Name | Suggested Assignment"");
+        sb.AppendLine(""------|------|------------------------"");
+        LogTreeNumbered(scan.transform, sb, 0, 0);
+        Debug.Log(sb.ToString());
         DestroyImmediate(scan);
     }
 
-    void LogTree(Transform t, System.Text.StringBuilder sb, int depth)
+    int LogTreeNumbered(Transform t, System.Text.StringBuilder sb, int depth, int idx)
     {
-        if (t.name.EndsWith("_end")) return;
-        if (t.GetComponent<Renderer>() != null) return;
-        if (t.GetComponent<SkinnedMeshRenderer>() != null) return;
-        sb.AppendLine(new string(' ', depth * 2) + t.name);
+        if (t.name.EndsWith(""_end"")) return idx;
+        if (t.GetComponent<Renderer>() != null) return idx;
+        if (t.GetComponent<SkinnedMeshRenderer>() != null) return idx;
+        string suggestion = idx == 0 ? ""wrist""
+            : idx <= 4 ? ""thumb["" + (idx-1) + ""]""
+            : idx <= 8 ? ""index["" + (idx-5) + ""]""
+            : idx <= 12 ? ""middle["" + (idx-9) + ""]""
+            : idx <= 16 ? ""ring["" + (idx-13) + ""]""
+            : idx <= 20 ? ""pinky["" + (idx-17) + ""]""
+            : ""extra"";
+        sb.AppendLine($""{idx,2}    | {t.name,-16} | {suggestion}"");
+        idx++;
         for (int i = 0; i < t.childCount; i++)
-            LogTree(t.GetChild(i), sb, depth + 1);
+            idx = LogTreeNumbered(t.GetChild(i), sb, depth + 1, idx);
+        return idx;
     }
 
+    }
 
     void AutoDiscover(Transform root)
     {
@@ -271,6 +307,31 @@ public class MediaPipeDirectHand : MonoBehaviour
         return string.Join(", ", s);
     }
 
+    void OnGUI()
+    {
+        if (!enableLog) return;
+        GUI.color = Color.white;
+        GUILayout.BeginArea(new Rect(10, 10, 350, 200));
+        GUILayout.Label($""[v2.2] Port {listenPort} | Packets: {_packetsReceived} ({_packetsPerSecond}/s)"", GUI.skin.box);
+        GUILayout.Label($""Mode: {(testMode ? ""TEST"" : (wristBone != null ? ""ACTIVE"" : ""NO BONES""))}"");
+        if (wristBone)
+        {
+            GUILayout.Label($""wrist={wristBone.name}"");
+            GUILayout.Label($""thumb={BoneSummary(thumbBones)} index={BoneSummary(indexBones)}"");
+            GUILayout.Label($""middle={BoneSummary(middleBones)} ring={BoneSummary(ringBones)} little={BoneSummary(littleBones)}"");
+        }
+        if (testMode)
+            GUILayout.Label($""TEST: curl={testCurl:F2} spread={testSpread:F2}"");
+        GUILayout.EndArea();
+    }
+
+    string BoneSummary(Transform[] arr)
+    {
+        int count = 0;
+        foreach (var t in arr) if (t != null) count++;
+        return count + ""/4"";
+    }
+
     // ?? UDP ??????????????????????????????????????????????????
 
     void StartUdp()
@@ -305,6 +366,7 @@ public class MediaPipeDirectHand : MonoBehaviour
             {
                 byte[] data = _udp.Receive(ref remote);
                 string json = Encoding.UTF8.GetString(data);
+                _packetsReceived++;
                 var pkt = JsonUtility.FromJson<HamerPacket>(json);
                 if (pkt != null && pkt.type == "hamer_hand") _queue.Enqueue(pkt);
             }
