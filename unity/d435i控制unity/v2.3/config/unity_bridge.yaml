@@ -1,0 +1,6 @@
+﻿# unity_bridge.yaml — v2.3 配置文件
+# 注意: Unity 脚本参数在 Inspector 中设置，此文件仅供参考
+
+target_ip: "127.0.0.1"
+target_port: 5057
+send_interval_sec: 0.033
